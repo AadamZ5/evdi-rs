@@ -1,6 +1,6 @@
-## Archived
+## Fork
 
-I abandoned the project I built this for, and am no longer actively working on it.
+Maintenance fork of [dzfranklin/evdi-rs](https://github.com/dzfranklin/evdi-rs)
 
 # evdi
 

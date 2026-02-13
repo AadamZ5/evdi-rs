@@ -14,10 +14,11 @@ use crate::events::{AwaitEventError, Event};
 use crate::prelude::*;
 use derivative::Derivative;
 
-/// Represents a handle that is open but not connected.
+/// Represents an EVDI handle that is open but not connected.
 #[derive(Debug)]
 pub struct UnconnectedHandle {
-    device: DeviceNode,
+    /// The device node that corresponds to this handle, if known.
+    device: Option<DeviceNode>,
     handle: evdi_handle,
 }
 
@@ -63,7 +64,7 @@ impl UnconnectedHandle {
         Handle::new(device, sys, config)
     }
 
-    pub(crate) fn new(device: DeviceNode, handle: evdi_handle) -> Self {
+    pub(crate) fn new(device: Option<DeviceNode>, handle: evdi_handle) -> Self {
         Self { handle, device }
     }
 }
@@ -78,7 +79,8 @@ impl Drop for UnconnectedHandle {
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct Handle {
-    device: DeviceNode,
+    /// The device node that was used to create this handle, if known.
+    device: Option<DeviceNode>,
     sys: evdi_handle,
     device_config: DeviceConfig,
     buffers: HashMap<BufferId, Buffer>,
@@ -343,7 +345,11 @@ impl Handle {
     }
 
     /// Takes a handle that has just been connected
-    fn new(device: DeviceNode, handle_sys: evdi_handle, device_config: &DeviceConfig) -> Self {
+    fn new(
+        device: Option<DeviceNode>,
+        handle_sys: evdi_handle,
+        device_config: &DeviceConfig,
+    ) -> Self {
         let (close_event_handler, close_recv) = crossbeam_channel::bounded(1);
         let (event_tx, event_recv) = mpsc::channel(16);
 

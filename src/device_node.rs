@@ -3,6 +3,7 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io::Write;
 use std::os::raw::c_uint;
+use std::ptr::null;
 use std::{fs, io};
 
 use lazy_static::lazy_static;
@@ -16,7 +17,8 @@ use crate::{ensure_logs_setup, ffi};
 const DEVICE_CARDS_DIR: &str = "/dev/dri";
 const REMOVE_ALL_FILE: &str = "/sys/devices/evdi/remove_all";
 
-/// Represents a device node (`/dev/dri/card*`).
+/// Represents a device node (`/dev/dri/card*`). This may or may not
+/// be an EVDI device.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DeviceNode {
     pub(crate) id: i32,
@@ -66,11 +68,36 @@ impl DeviceNode {
                 let sys = unsafe { ffi::evdi_open(self.id) };
                 if !sys.is_null() {
                     info!("Opened device {}", self.id);
-                    Ok(UnconnectedHandle::new(self.clone(), sys))
+                    Ok(UnconnectedHandle::new(Some(self.clone()), sys))
                 } else {
                     Err(OpenDeviceError::Unknown)
                 }
             }
+        }
+    }
+
+    /// Open an unused device on-demand.
+    ///
+    /// If existing devices are in-use, this will create a new device (if able) and return
+    /// an unconnected handle to that.
+    pub fn open_unused() -> Result<UnconnectedHandle, OpenDeviceError> {
+        // Provide helpful info if the call would have failed with Unknown
+        match check_kernel_mod() {
+            KernelModStatus::NotInstalled => return Err(OpenDeviceError::KernelModuleNotInstalled),
+            KernelModStatus::Outdated => return Err(OpenDeviceError::KernelModuleOutdated),
+            KernelModStatus::Compatible => (),
+        }
+
+        // Open ID null to create a new handle on-demand
+        // https://displaylink.github.io/evdi/quickstart/#requesting-evdi-node-since-v190
+        let sys = unsafe { ffi::evdi_open_attached_to(null()) };
+        if !sys.is_null() {
+            info!("Opened device at handle {:?}", sys);
+            // TODO: Read the evdi_device_context after populating it in `evdi-sys`
+            // to discover what the device index is, so we can populate that ID here!
+            Ok(UnconnectedHandle::new(None, sys))
+        } else {
+            Err(OpenDeviceError::Unknown)
         }
     }
 
@@ -155,8 +182,14 @@ impl PartialOrd for DeviceNode {
     serde(crate = "serde_crate")
 )]
 pub enum DeviceNodeStatus {
+    /// The device is an EVDI device, and as able to function.
+    /// This does not mean that the device is not currently being
+    /// used for display purposes.
     Available,
+    /// Not a recognized EVDI device, may belong to some other
+    /// subsystem.
     Unrecognized,
+    /// The device path was not found in the filesystem
     NotPresent,
 }
 
